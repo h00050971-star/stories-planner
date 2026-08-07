@@ -1,17 +1,5 @@
 [
  {
-  "id": "s1786127031580ywwo2",
-  "order": 1,
-  "mediaPath": "media/s1786127031580ywwo2.mov",
-  "mediaType": "video",
-  "draftText": "Будни продюсера) Едем для нашего проката тачек переснимать тренд на миллион просмотров ",
-  "status": "ready",
-  "platforms": [],
-  "trimStart": 1.8,
-  "trimEnd": 11.8,
-  "trimmedMediaPath": null
- },
- {
   "id": "s1786128163994h5ew7",
   "order": 2,
   "mediaPath": "media/s1786128163994h5ew7.mov",
