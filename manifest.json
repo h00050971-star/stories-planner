@@ -7,5 +7,14 @@
   "draftText": "Едем для нашего проката тачек переснимать тренд на миллион просмотров ",
   "status": "ready",
   "platforms": []
+ },
+ {
+  "id": "s1786128163994h5ew7",
+  "order": 2,
+  "mediaPath": "media/s1786128163994h5ew7.mov",
+  "mediaType": "video",
+  "draftText": "",
+  "status": "draft",
+  "platforms": []
  }
 ]
