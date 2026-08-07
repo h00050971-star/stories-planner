@@ -1,1 +1,11 @@
-[]
+[
+ {
+  "id": "test_ready_1",
+  "order": 1,
+  "mediaPath": "media/does_not_matter.jpg",
+  "mediaType": "image",
+  "draftText": "тестовая подпись",
+  "status": "ready",
+  "platforms": []
+ }
+]
