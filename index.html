@@ -29,6 +29,7 @@
   .spacer{ flex:1; }
   .zoom{ display:flex; align-items:center; gap:8px; }
   .zoom button{ width:34px; height:34px; border-radius:8px; }
+  @media (max-width: 700px){ .zoom{ display:none; } }
   button{
     background: #262b36; color: var(--text); border:1px solid var(--border);
     border-radius: 8px; padding: 8px 14px; cursor:pointer; font-size:14px;
@@ -40,6 +41,11 @@
   #dropzone-hint{ font-size:12px; color:var(--muted); }
 
   main{ padding: 20px; }
+  #page-footer{
+    padding: 16px 20px 28px; display:flex; justify-content:center;
+    border-top:1px solid var(--border);
+  }
+  #page-footer button{ font-size:12px; color:var(--muted); }
   #track{
     display:flex; flex-wrap:wrap; gap:14px; align-items:flex-start;
   }
@@ -69,7 +75,7 @@
   .empty-slot input[type=file]{ display:none; }
   .empty-slot .pick{ padding:6px 12px; font-size:12px; }
   textarea.draft{
-    position:absolute; left:8px; right:8px; bottom:44px; z-index:3;
+    position:absolute; left:8px; right:8px; top:44px; z-index:3;
     background:rgba(0,0,0,.55); color:#fff; border:1px solid rgba(255,255,255,.25);
     border-radius:8px; padding:8px; font-size:13px; resize:none; min-height:54px;
     font-family:inherit;
@@ -110,11 +116,13 @@
   <div id="dropzone-hint">Перетащи фото/видео на карточку, или на «+» в конце ряда</div>
   <div class="spacer"></div>
   <span id="status-line">—</span>
-  <button id="token-btn">Токен GitHub</button>
 </header>
 <main>
   <div id="track"></div>
 </main>
+<footer id="page-footer">
+  <button id="token-btn">Токен GitHub</button>
+</footer>
 <div class="toast" id="toast"></div>
 <input type="file" id="file-input" accept="image/*,video/*" multiple>
 
@@ -348,7 +356,7 @@ function makeCard(item, index){
     const rawUrl = `https://raw.githubusercontent.com/${OWNER}/${REPO}/${BRANCH}/${displayPath}`;
     if (item.mediaType === "video"){
       const v = document.createElement("video");
-      v.src = rawUrl; v.controls = true; v.muted = true; v.playsInline = true;
+      v.src = rawUrl; v.controls = true; v.muted = false; v.playsInline = true;
       mediaWrap.appendChild(v);
     } else {
       const img = document.createElement("img");
