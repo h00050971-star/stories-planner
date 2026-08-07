@@ -6,7 +6,10 @@
   "mediaType": "video",
   "draftText": "Будни продюсера) Едем для нашего проката тачек переснимать тренд на миллион просмотров ",
   "status": "ready",
-  "platforms": []
+  "platforms": [],
+  "trimStart": 0,
+  "trimEnd": 16.9,
+  "trimmedMediaPath": null
  },
  {
   "id": "s1786128163994h5ew7",
