@@ -217,14 +217,14 @@ async function getFFmpeg(onProgress){
       if (!window.FFmpegWASM || !window.FFmpegUtil){
         if (onProgress) onProgress("Загружаю библиотеку обрезки…");
         await Promise.all([
-          loadScriptOnce("https://unpkg.com/@ffmpeg/ffmpeg@0.12.10/dist/umd/ffmpeg.js"),
-          loadScriptOnce("https://unpkg.com/@ffmpeg/util@0.12.1/dist/umd/index.js"),
+          loadScriptOnce("vendor/ffmpeg/ffmpeg.js"),
+          loadScriptOnce("vendor/ffmpeg/ffmpeg-util.js"),
         ]);
       }
       const { FFmpeg } = FFmpegWASM;
       const ff = new FFmpeg();
       if (onProgress) ff.on("log", ({ message }) => onProgress(message));
-      const base = "https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd";
+      const base = "vendor/ffmpeg";
       await ff.load({
         coreURL: await FFmpegUtil.toBlobURL(`${base}/ffmpeg-core.js`, "text/javascript"),
         wasmURL: await FFmpegUtil.toBlobURL(`${base}/ffmpeg-core.wasm`, "application/wasm"),
