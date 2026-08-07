@@ -256,6 +256,28 @@ async function trimVideoInBrowser(srcUrl, start, end, ext, onStatus){
   return new Blob([out.buffer], { type: "video/mp4" });
 }
 
+async function compressVideoInBrowser(file, onStatus){
+  onStatus("Гружу сжиматель видео (один раз)…");
+  const ff = await getFFmpeg((msg) => onStatus("Сжимаю: " + msg.slice(0, 40)));
+  onStatus("Читаю файл…");
+  const data = new Uint8Array(await file.arrayBuffer());
+  const ext = "." + (file.name.split(".").pop() || "mov").toLowerCase();
+  const inName = "in" + ext;
+  const outName = "out.mp4";
+  await ff.writeFile(inName, data);
+  onStatus("Сжимаю видео…");
+  await ff.exec([
+    "-i", inName,
+    "-vf", "scale=if(gt(iw\\,ih)\\,min(1280\\,iw)\\,-2):if(gt(iw\\,ih)\\,-2\\,min(1280\\,ih))",
+    "-c:v", "libx264", "-crf", "28", "-preset", "veryfast",
+    "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", outName,
+  ]);
+  const out = await ff.readFile(outName);
+  await ff.deleteFile(inName);
+  await ff.deleteFile(outName);
+  return new Blob([out.buffer], { type: "video/mp4" });
+}
+
 // ---------- токен ----------
 function getToken(){ return localStorage.getItem("sp_gh_token") || ""; }
 function setToken(t){ localStorage.setItem("sp_gh_token", t.trim()); }
@@ -366,13 +388,29 @@ document.getElementById("zoom-out").onclick = () => { zoom = Math.max(40, zoom -
 applyZoom();
 
 // ---------- загрузка медиа ----------
+const COMPRESS_THRESHOLD = 60 * 1024 * 1024; // выше — сжимаем перед загрузкой (потолок GitHub ~100МБ на файл)
+
 async function uploadFileToSlot(file, existingId){
   const ext = (file.name.split(".").pop() || "bin").toLowerCase();
   const isVideo = file.type.startsWith("video/") || ["mp4","mov","m4v"].includes(ext);
   const id = existingId || ("s" + Date.now() + Math.random().toString(36).slice(2,7));
-  const path = `media/${id}.${ext}`;
+
+  let uploadFile = file;
+  let uploadExt = ext;
+  if (isVideo && file.size > COMPRESS_THRESHOLD){
+    try{
+      const blob = await compressVideoInBrowser(file, (msg) => setStatus(msg));
+      uploadFile = new File([blob], "compressed.mp4", { type: "video/mp4" });
+      uploadExt = "mp4";
+    }catch(e){
+      console.error(e);
+      throw new Error("Не удалось сжать видео: " + e.message);
+    }
+  }
+
+  const path = `media/${id}.${uploadExt}`;
   toast("Загружаю файл в GitHub…");
-  const b64 = await fileToBase64(file);
+  const b64 = await fileToBase64(uploadFile);
   await ghPutFile(path, b64, `Загрузка сторис ${id}`, null);
   return { id, path, mediaType: isVideo ? "video" : "image" };
 }
