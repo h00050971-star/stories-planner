@@ -1,0 +1,427 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Планировщик сторис</title>
+<style>
+  :root{
+    --card-w: 300px;
+    --bg: #0f1115;
+    --panel: #171a21;
+    --card: #1e222b;
+    --border: #2a2f3a;
+    --text: #e9ebf0;
+    --muted: #8a90a0;
+    --accent: #6c8cff;
+    --ready: #3ecf8e;
+    --draft: #f2b84b;
+  }
+  *{ box-sizing: border-box; }
+  html,body{ margin:0; padding:0; background:var(--bg); color:var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; }
+  header{
+    position: sticky; top:0; z-index: 10;
+    display:flex; align-items:center; gap:16px; flex-wrap:wrap;
+    padding: 14px 20px; background: var(--panel); border-bottom: 1px solid var(--border);
+  }
+  header h1{ font-size:16px; margin:0; font-weight:600; white-space:nowrap; }
+  .spacer{ flex:1; }
+  .zoom{ display:flex; align-items:center; gap:8px; }
+  .zoom button{ width:34px; height:34px; border-radius:8px; }
+  button{
+    background: #262b36; color: var(--text); border:1px solid var(--border);
+    border-radius: 8px; padding: 8px 14px; cursor:pointer; font-size:14px;
+  }
+  button:hover{ background:#2e3442; }
+  button.primary{ background: var(--accent); border-color: var(--accent); color:#fff; }
+  button.primary:hover{ filter:brightness(1.08); }
+  #status-line{ font-size:12px; color:var(--muted); white-space:nowrap; }
+  #dropzone-hint{ font-size:12px; color:var(--muted); }
+
+  main{ padding: 20px; }
+  #track{
+    display:flex; flex-wrap:wrap; gap:14px; align-items:flex-start;
+  }
+  .card{
+    position:relative; width: var(--card-w); aspect-ratio: 9/16;
+    background:var(--card); border:1px solid var(--border); border-radius: 14px;
+    overflow:hidden; display:flex; flex-direction:column; cursor:grab;
+  }
+  .card.dragging{ opacity:.4; }
+  .card.dragover{ outline: 2px dashed var(--accent); outline-offset:-2px; }
+  .badge{
+    position:absolute; top:8px; left:8px; z-index:3;
+    background:rgba(0,0,0,.6); color:#fff; font-weight:700; font-size:13px;
+    width:26px; height:26px; border-radius:50%; display:flex; align-items:center; justify-content:center;
+  }
+  .status-dot{
+    position:absolute; top:10px; right:10px; z-index:3; width:10px; height:10px; border-radius:50%;
+    background: var(--draft); box-shadow: 0 0 0 2px rgba(0,0,0,.4);
+  }
+  .status-dot.ready{ background: var(--ready); }
+  .media-wrap{ position:relative; flex:1; background:#000; display:flex; align-items:center; justify-content:center; }
+  .media-wrap img, .media-wrap video{ width:100%; height:100%; object-fit:cover; }
+  .empty-slot{
+    flex:1; display:flex; align-items:center; justify-content:center; flex-direction:column; gap:8px;
+    color:var(--muted); font-size:13px; text-align:center; padding:12px;
+  }
+  .empty-slot input[type=file]{ display:none; }
+  .empty-slot .pick{ padding:6px 12px; font-size:12px; }
+  textarea.draft{
+    position:absolute; left:8px; right:8px; bottom:44px; z-index:3;
+    background:rgba(0,0,0,.55); color:#fff; border:1px solid rgba(255,255,255,.25);
+    border-radius:8px; padding:8px; font-size:13px; resize:none; min-height:54px;
+    font-family:inherit;
+  }
+  .card-footer{
+    display:flex; gap:6px; padding:8px; border-top:1px solid var(--border); background:var(--panel);
+  }
+  .card-footer button{ flex:1; padding:6px 4px; font-size:11px; }
+  .card-footer button.ready-btn.is-ready{ background: var(--ready); border-color:var(--ready); color:#06281a; }
+  .card-footer button.del-btn:hover{ background:#4a2130; border-color:#7a2f45; }
+
+  #add-card{
+    width: var(--card-w); aspect-ratio:9/16; border:2px dashed var(--border); border-radius:14px;
+    display:flex; align-items:center; justify-content:center; color:var(--muted); font-size:40px;
+    cursor:pointer;
+  }
+  #add-card.dragover{ border-color:var(--accent); color:var(--accent); }
+  #file-input{ display:none; }
+
+  .toast{
+    position:fixed; bottom:20px; left:50%; transform:translateX(-50%);
+    background:#262b36; border:1px solid var(--border); padding:10px 16px; border-radius:10px;
+    font-size:13px; z-index:50; opacity:0; pointer-events:none; transition:opacity .2s;
+  }
+  .toast.show{ opacity:1; }
+</style>
+</head>
+<body>
+<header>
+  <h1>📱 Планировщик сторис</h1>
+  <div class="zoom">
+    <button id="zoom-out" title="Уменьшить">−</button>
+    <span id="zoom-label" style="font-size:12px;color:var(--muted);width:40px;text-align:center;">100%</span>
+    <button id="zoom-in" title="Увеличить">+</button>
+  </div>
+  <div id="dropzone-hint">Перетащи фото/видео на карточку, или на «+» в конце ряда</div>
+  <div class="spacer"></div>
+  <span id="status-line">—</span>
+  <button id="token-btn">Токен GitHub</button>
+</header>
+<main>
+  <div id="track"></div>
+</main>
+<div class="toast" id="toast"></div>
+<input type="file" id="file-input" accept="image/*,video/*" multiple>
+
+<script>
+const OWNER = "h00050971-star";
+const REPO = "stories-planner";
+const BRANCH = "main";
+const API = `https://api.github.com/repos/${OWNER}/${REPO}`;
+
+let manifest = [];
+let manifestSha = null;
+let zoom = parseInt(localStorage.getItem("sp_zoom") || "100", 10);
+
+// ---------- токен ----------
+function getToken(){ return localStorage.getItem("sp_gh_token") || ""; }
+function setToken(t){ localStorage.setItem("sp_gh_token", t.trim()); }
+function ensureToken(){
+  let t = getToken();
+  if (!t){
+    t = prompt("Вставь GitHub Personal Access Token (fine-grained, доступ только к репозиторию stories-planner, права Contents: Read & Write). Токен сохранится только в этом браузере.");
+    if (t) setToken(t);
+  }
+  return getToken();
+}
+document.getElementById("token-btn").onclick = () => {
+  const t = prompt("GitHub PAT (Contents R/W на репозиторий stories-planner):", getToken());
+  if (t !== null) setToken(t);
+};
+
+// ---------- GitHub API ----------
+function ghHeaders(){
+  return {
+    "Authorization": `Bearer ${ensureToken()}`,
+    "Accept": "application/vnd.github+json",
+  };
+}
+
+async function ghGetFile(path){
+  const r = await fetch(`${API}/contents/${path}?ref=${BRANCH}&t=${Date.now()}`, { headers: ghHeaders(), cache: "no-store" });
+  if (r.status === 404) return { content: null, sha: null };
+  if (!r.ok) throw new Error(`GET ${path} failed: ${r.status} ${await r.text()}`);
+  const j = await r.json();
+  return { content: j.content, sha: j.sha, encoding: j.encoding };
+}
+
+async function ghPutFile(path, base64Content, message, knownSha){
+  let sha = knownSha;
+  for (let attempt = 0; attempt < 4; attempt++){
+    const body = { message, content: base64Content, branch: BRANCH };
+    if (sha) body.sha = sha;
+    const r = await fetch(`${API}/contents/${path}`, {
+      method: "PUT", headers: { ...ghHeaders(), "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (r.ok) return await r.json();
+    if (r.status === 409 || r.status === 422){
+      // конфликт версий — перечитать sha и повторить
+      const fresh = await ghGetFile(path);
+      sha = fresh.sha;
+      continue;
+    }
+    throw new Error(`PUT ${path} failed: ${r.status} ${await r.text()}`);
+  }
+  throw new Error(`PUT ${path}: не удалось после нескольких попыток (конфликты версий)`);
+}
+
+function b64EncodeUnicode(str){
+  return btoa(unescape(encodeURIComponent(str)));
+}
+function b64DecodeUnicode(str){
+  return decodeURIComponent(escape(atob(str.replace(/\n/g, ""))));
+}
+
+function fileToBase64(file){
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result.split(",")[1]);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+// ---------- манифест ----------
+async function loadManifest(){
+  setStatus("Загружаю манифест…");
+  const { content, sha } = await ghGetFile("manifest.json");
+  manifestSha = sha;
+  manifest = content ? JSON.parse(b64DecodeUnicode(content)) : [];
+  setStatus(`Слотов: ${manifest.length}`);
+  render();
+}
+
+async function saveManifest(message){
+  const b64 = b64EncodeUnicode(JSON.stringify(manifest, null, 1));
+  const res = await ghPutFile("manifest.json", b64, message, manifestSha);
+  manifestSha = res.content.sha;
+}
+
+function nextOrder(){
+  return manifest.length ? Math.max(...manifest.map(m => m.order)) + 1 : 1;
+}
+
+// ---------- UI helpers ----------
+function setStatus(s){ document.getElementById("status-line").textContent = s; }
+function toast(msg){
+  const el = document.getElementById("toast");
+  el.textContent = msg; el.classList.add("show");
+  clearTimeout(toast._t);
+  toast._t = setTimeout(() => el.classList.remove("show"), 2500);
+}
+
+function applyZoom(){
+  // 100% -> ~5 карточек в ряд на 1920px экране
+  const w = Math.round(340 * (100 / zoom));
+  document.documentElement.style.setProperty("--card-w", w + "px");
+  document.getElementById("zoom-label").textContent = zoom + "%";
+  localStorage.setItem("sp_zoom", zoom);
+}
+document.getElementById("zoom-in").onclick = () => { zoom = Math.min(220, zoom + 15); applyZoom(); };
+document.getElementById("zoom-out").onclick = () => { zoom = Math.max(40, zoom - 15); applyZoom(); };
+applyZoom();
+
+// ---------- загрузка медиа ----------
+async function uploadFileToSlot(file, existingId){
+  const ext = (file.name.split(".").pop() || "bin").toLowerCase();
+  const isVideo = file.type.startsWith("video/") || ["mp4","mov","m4v"].includes(ext);
+  const id = existingId || ("s" + Date.now() + Math.random().toString(36).slice(2,7));
+  const path = `media/${id}.${ext}`;
+  toast("Загружаю файл в GitHub…");
+  const b64 = await fileToBase64(file);
+  await ghPutFile(path, b64, `Загрузка сторис ${id}`, null);
+  return { id, path, mediaType: isVideo ? "video" : "image" };
+}
+
+async function handleNewFiles(fileList){
+  const files = Array.from(fileList);
+  for (const file of files){
+    try{
+      const { id, path, mediaType } = await uploadFileToSlot(file);
+      manifest.push({
+        id, order: nextOrder(), mediaPath: path, mediaType,
+        draftText: "", status: "draft", platforms: [],
+      });
+      render();
+    }catch(e){
+      console.error(e);
+      toast("Ошибка загрузки: " + e.message);
+    }
+  }
+  try{
+    await saveManifest(`Добавлено сторис: ${files.length}`);
+    toast("Сохранено");
+    setStatus(`Слотов: ${manifest.length}`);
+  }catch(e){
+    toast("Ошибка сохранения манифеста: " + e.message);
+  }
+}
+
+document.getElementById("file-input").onchange = (e) => {
+  handleNewFiles(e.target.files);
+  e.target.value = "";
+};
+
+const addCard = () => {
+  const el = document.createElement("div");
+  el.id = "add-card";
+  el.textContent = "+";
+  el.onclick = () => document.getElementById("file-input").click();
+  ["dragenter","dragover"].forEach(ev => el.addEventListener(ev, e => { e.preventDefault(); el.classList.add("dragover"); }));
+  ["dragleave","drop"].forEach(ev => el.addEventListener(ev, e => { e.preventDefault(); el.classList.remove("dragover"); }));
+  el.addEventListener("drop", e => { if (e.dataTransfer.files.length) handleNewFiles(e.dataTransfer.files); });
+  return el;
+};
+
+// ---------- рендер ----------
+let saveDraftTimers = {};
+
+function debounceSaveDraft(id, text){
+  clearTimeout(saveDraftTimers[id]);
+  saveDraftTimers[id] = setTimeout(async () => {
+    const item = manifest.find(m => m.id === id);
+    if (!item) return;
+    item.draftText = text;
+    try{ await saveManifest(`Черновик текста: ${id}`); toast("Текст сохранён"); }
+    catch(e){ toast("Ошибка сохранения текста: " + e.message); }
+  }, 1200);
+}
+
+function makeCard(item, index){
+  const card = document.createElement("div");
+  card.className = "card";
+  card.draggable = true;
+  card.dataset.id = item.id;
+
+  const badge = document.createElement("div");
+  badge.className = "badge";
+  badge.textContent = index + 1;
+  card.appendChild(badge);
+
+  const dot = document.createElement("div");
+  dot.className = "status-dot" + (item.status === "ready" ? " ready" : "");
+  card.appendChild(dot);
+
+  const mediaWrap = document.createElement("div");
+  mediaWrap.className = "media-wrap";
+  if (item.mediaPath){
+    const rawUrl = `https://raw.githubusercontent.com/${OWNER}/${REPO}/${BRANCH}/${item.mediaPath}`;
+    if (item.mediaType === "video"){
+      const v = document.createElement("video");
+      v.src = rawUrl; v.controls = true; v.muted = true; v.playsInline = true;
+      mediaWrap.appendChild(v);
+    } else {
+      const img = document.createElement("img");
+      img.src = rawUrl;
+      mediaWrap.appendChild(img);
+    }
+  } else {
+    const empty = document.createElement("div");
+    empty.className = "empty-slot";
+    empty.textContent = "Пусто — перетащи файл сюда";
+    mediaWrap.appendChild(empty);
+  }
+  card.appendChild(mediaWrap);
+
+  const ta = document.createElement("textarea");
+  ta.className = "draft";
+  ta.placeholder = "Текст на сторис…";
+  ta.value = item.draftText || "";
+  ta.oninput = () => debounceSaveDraft(item.id, ta.value);
+  card.appendChild(ta);
+
+  const footer = document.createElement("div");
+  footer.className = "card-footer";
+
+  const readyBtn = document.createElement("button");
+  readyBtn.className = "ready-btn" + (item.status === "ready" ? " is-ready" : "");
+  readyBtn.textContent = item.status === "ready" ? "✓ готово" : "к публикации";
+  readyBtn.onclick = async () => {
+    item.status = item.status === "ready" ? "draft" : "ready";
+    render();
+    try{ await saveManifest(`Статус ${item.id}: ${item.status}`); toast("Статус обновлён"); }
+    catch(e){ toast("Ошибка: " + e.message); }
+  };
+  footer.appendChild(readyBtn);
+
+  const delBtn = document.createElement("button");
+  delBtn.className = "del-btn";
+  delBtn.textContent = "✕";
+  delBtn.title = "Удалить слот";
+  delBtn.onclick = async () => {
+    if (!confirm("Удалить эту сторис из планировщика?")) return;
+    manifest = manifest.filter(m => m.id !== item.id);
+    render();
+    try{ await saveManifest(`Удалён слот ${item.id}`); toast("Удалено"); }
+    catch(e){ toast("Ошибка: " + e.message); }
+  };
+  footer.appendChild(delBtn);
+
+  card.appendChild(footer);
+
+  // drag&drop замены медиа
+  ["dragenter","dragover"].forEach(ev => card.addEventListener(ev, e => {
+    if (e.dataTransfer.types.includes("Files")){ e.preventDefault(); card.classList.add("dragover"); }
+  }));
+  ["dragleave"].forEach(ev => card.addEventListener(ev, () => card.classList.remove("dragover")));
+  card.addEventListener("drop", async (e) => {
+    if (!e.dataTransfer.files.length) return;
+    e.preventDefault(); card.classList.remove("dragover");
+    const file = e.dataTransfer.files[0];
+    try{
+      const { path, mediaType } = await uploadFileToSlot(file, item.id);
+      item.mediaPath = path; item.mediaType = mediaType;
+      render();
+      await saveManifest(`Заменено медиа: ${item.id}`);
+      toast("Медиа обновлено");
+    }catch(err){ toast("Ошибка: " + err.message); }
+  });
+
+  // drag&drop переупорядочивания карточек (по HTML5 draggable, не файлы)
+  card.addEventListener("dragstart", (e) => {
+    e.dataTransfer.setData("text/sp-id", item.id);
+    card.classList.add("dragging");
+  });
+  card.addEventListener("dragend", () => card.classList.remove("dragging"));
+  card.addEventListener("drop", async (e) => {
+    const draggedId = e.dataTransfer.getData("text/sp-id");
+    if (!draggedId || draggedId === item.id) return;
+    e.preventDefault();
+    const from = manifest.find(m => m.id === draggedId);
+    const to = manifest.find(m => m.id === item.id);
+    if (!from || !to) return;
+    const tmp = from.order; from.order = to.order; to.order = tmp;
+    render();
+    try{ await saveManifest(`Переставлены местами: ${from.id} / ${to.id}`); }
+    catch(err){ toast("Ошибка: " + err.message); }
+  });
+
+  return card;
+}
+
+function render(){
+  const track = document.getElementById("track");
+  track.innerHTML = "";
+  const sorted = [...manifest].sort((a,b) => a.order - b.order);
+  sorted.forEach((item, i) => track.appendChild(makeCard(item, i)));
+  track.appendChild(addCard());
+}
+
+loadManifest().catch(e => { setStatus("Ошибка загрузки: " + e.message); console.error(e); });
+</script>
+</body>
+</html>
