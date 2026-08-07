@@ -78,6 +78,24 @@
   .status-dot.ready{ background: var(--ready); }
   .media-wrap{ position:relative; flex:1; min-height:0; min-width:0; background:#000; display:flex; align-items:center; justify-content:center; }
   .media-wrap img, .media-wrap video{ width:100%; height:100%; object-fit:cover; }
+  .overlay-layer{
+    position:absolute; z-index:5; cursor:grab; touch-action:none;
+    border:2px solid var(--accent); border-radius:6px; overflow:hidden;
+  }
+  .overlay-layer.dragging{ cursor:grabbing; opacity:.85; }
+  .overlay-layer img, .overlay-layer video{ display:block; width:100%; height:100%; object-fit:cover; pointer-events:none; }
+  .overlay-remove{
+    position:absolute; top:-10px; right:-10px; z-index:6; width:22px; height:22px; border-radius:50%;
+    background:#4a2130; border:1px solid #7a2f45; color:#fff; font-size:12px; line-height:1;
+    display:flex; align-items:center; justify-content:center; cursor:pointer;
+  }
+  .layer-box{
+    flex-shrink:0; display:flex; align-items:center; gap:8px; padding:6px 10px;
+    border-top:1px solid var(--border); background:rgba(255,255,255,.03); font-size:11px; color:var(--muted);
+  }
+  .layer-box button{ font-size:11px; padding:5px 8px; }
+  .layer-box input[type=range]{ flex:1; }
+  .layer-file-input{ display:none; }
   .empty-slot{
     flex:1; display:flex; align-items:center; justify-content:center; flex-direction:column; gap:8px;
     color:var(--muted); font-size:13px; text-align:center; padding:12px;
@@ -161,6 +179,8 @@
 <input type="file" id="file-input" accept="image/*,video/*" multiple>
 
 <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+<script src="https://unpkg.com/@ffmpeg/ffmpeg@0.12.10/dist/umd/ffmpeg.js"></script>
+<script src="https://unpkg.com/@ffmpeg/util@0.12.1/dist/umd/index.js"></script>
 <script>
 const OWNER = "h00050971-star";
 const REPO = "stories-planner";
@@ -177,6 +197,48 @@ function displayPathFor(item){
 }
 function rawUrlFor(path){
   return `https://raw.githubusercontent.com/${OWNER}/${REPO}/${BRANCH}/${path}`;
+}
+
+// ---------- обрезка видео прямо в браузере (ffmpeg.wasm) ----------
+let ffmpegInstance = null;
+let ffmpegLoadPromise = null;
+async function getFFmpeg(onProgress){
+  if (ffmpegInstance) return ffmpegInstance;
+  if (!ffmpegLoadPromise){
+    ffmpegLoadPromise = (async () => {
+      const { FFmpeg } = FFmpegWASM;
+      const ff = new FFmpeg();
+      if (onProgress) ff.on("log", ({ message }) => onProgress(message));
+      const base = "https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd";
+      await ff.load({
+        coreURL: await FFmpegUtil.toBlobURL(`${base}/ffmpeg-core.js`, "text/javascript"),
+        wasmURL: await FFmpegUtil.toBlobURL(`${base}/ffmpeg-core.wasm`, "application/wasm"),
+      });
+      ffmpegInstance = ff;
+      return ff;
+    })();
+  }
+  return await ffmpegLoadPromise;
+}
+
+async function trimVideoInBrowser(srcUrl, start, end, ext, onStatus){
+  onStatus("Гружу обрезчик видео (один раз)…");
+  const ff = await getFFmpeg((msg) => onStatus("Режу: " + msg.slice(0, 40)));
+  onStatus("Скачиваю исходник…");
+  const data = await FFmpegUtil.fetchFile(srcUrl);
+  const inName = "in" + ext;
+  const outName = "out.mp4";
+  await ff.writeFile(inName, data);
+  onStatus("Режу видео…");
+  await ff.exec([
+    "-i", inName, "-ss", String(start), "-to", String(end),
+    "-c:v", "libx264", "-crf", "20", "-preset", "veryfast",
+    "-c:a", "aac", "-movflags", "+faststart", outName,
+  ]);
+  const out = await ff.readFile(outName);
+  await ff.deleteFile(inName);
+  await ff.deleteFile(outName);
+  return new Blob([out.buffer], { type: "video/mp4" });
 }
 
 // ---------- токен ----------
@@ -384,13 +446,34 @@ function triggerBlobDownload(blob, filename){
   setTimeout(() => URL.revokeObjectURL(url), 4000);
 }
 
+function mimeFor(filename){
+  const ext = filename.split(".").pop().toLowerCase();
+  const map = { mp4:"video/mp4", mov:"video/quicktime", m4v:"video/x-m4v",
+    jpg:"image/jpeg", jpeg:"image/jpeg", png:"image/png", webp:"image/webp", gif:"image/gif" };
+  return map[ext] || "application/octet-stream";
+}
+
 async function downloadOne(item){
   const path = displayPathFor(item);
   if (!path){ toast("Нечего скачивать — слот пуст"); return; }
+  const filename = path.split("/").pop();
   try{
     toast("Скачиваю…");
     const blob = await fetchAsBlob(path);
-    triggerBlobDownload(blob, path.split("/").pop());
+    const file = new File([blob], filename, { type: blob.type || mimeFor(filename) });
+    // на телефоне — через системное «Поделиться» (можно сохранить прямо в галерею),
+    // на компе — обычным файлом (Web Share API там либо недоступен, либо неудобен)
+    if (navigator.canShare && navigator.canShare({ files: [file] })){
+      try{
+        await navigator.share({ files: [file] });
+        toast("Выбери «Сохранить видео/изображение» в меню");
+        return;
+      }catch(shareErr){
+        if (shareErr.name === "AbortError") return; // пользователь закрыл шторку — не ошибка
+        // иначе — падаем в обычное скачивание файлом
+      }
+    }
+    triggerBlobDownload(blob, filename);
     toast("Скачано");
   }catch(e){ toast("Ошибка: " + e.message); }
 }
@@ -428,38 +511,56 @@ document.getElementById("dl-selected-btn").onclick = () => {
 // ---------- обрезка видео ----------
 // Реальную обрезку (ffmpeg) делает отдельный скрипт trim_video.py — здесь только
 // задаются точки "с/по" и сохраняются в манифест, обработка идёт по команде.
+function fmtTime(s){
+  s = Math.max(0, s || 0);
+  const m = Math.floor(s / 60);
+  const r = (s % 60).toFixed(1).padStart(4, "0");
+  return `${m}:${r}`;
+}
+
 function makeTrimBox(item, videoEl){
   const box = document.createElement("div");
   box.className = "trim-box";
+
+  let duration = videoEl && videoEl.duration && isFinite(videoEl.duration) ? videoEl.duration : 0;
+  let from = item.trimStart != null ? item.trimStart : 0;
+  let to = item.trimEnd != null ? item.trimEnd : (duration || 0);
+
+  // визуальная шкала
+  const track = document.createElement("div");
+  track.className = "trim-track";
+  track.style.cssText = "position:relative;height:28px;background:#0f1115;border:1px solid var(--border);border-radius:6px;cursor:pointer;";
+
+  const range = document.createElement("div");
+  range.style.cssText = "position:absolute;top:0;bottom:0;background:rgba(108,140,255,.35);border-left:2px solid var(--accent);border-right:2px solid var(--accent);";
+  track.appendChild(range);
+
+  const handleStart = document.createElement("div");
+  handleStart.style.cssText = "position:absolute;top:-2px;bottom:-2px;width:10px;margin-left:-5px;background:var(--accent);border-radius:3px;cursor:ew-resize;touch-action:none;";
+  track.appendChild(handleStart);
+
+  const handleEnd = document.createElement("div");
+  handleEnd.style.cssText = "position:absolute;top:-2px;bottom:-2px;width:10px;margin-left:-5px;background:var(--accent);border-radius:3px;cursor:ew-resize;touch-action:none;";
+  track.appendChild(handleEnd);
+
+  box.appendChild(track);
 
   const row = document.createElement("div");
   row.className = "trim-row";
 
   const fromInput = document.createElement("input");
   fromInput.type = "number"; fromInput.min = "0"; fromInput.step = "0.1";
-  fromInput.value = item.trimStart != null ? item.trimStart : 0;
 
   const toInput = document.createElement("input");
   toInput.type = "number"; toInput.min = "0"; toInput.step = "0.1";
-  toInput.value = item.trimEnd != null ? item.trimEnd : "";
-  toInput.placeholder = "конец";
-
-  if (videoEl){
-    videoEl.addEventListener("loadedmetadata", () => {
-      if (item.trimEnd == null) toInput.value = videoEl.duration.toFixed(1);
-      toInput.max = videoEl.duration.toFixed(1);
-    });
-  }
 
   const setBtn = document.createElement("button");
   setBtn.textContent = "◀ с текущего";
   setBtn.title = "Взять текущее время плеера как начало";
-  setBtn.onclick = (e) => { e.preventDefault(); if (videoEl) fromInput.value = videoEl.currentTime.toFixed(1); };
 
   const setEndBtn = document.createElement("button");
   setEndBtn.textContent = "текущего ▶";
   setEndBtn.title = "Взять текущее время плеера как конец";
-  setEndBtn.onclick = (e) => { e.preventDefault(); if (videoEl) toInput.value = videoEl.currentTime.toFixed(1); };
 
   row.appendChild(document.createTextNode("с"));
   row.appendChild(fromInput);
@@ -471,28 +572,254 @@ function makeTrimBox(item, videoEl){
 
   const applyRow = document.createElement("div");
   applyRow.className = "trim-row";
-
   const applyBtn = document.createElement("button");
   applyBtn.textContent = "✂ Обрезать";
   applyBtn.className = "primary";
-  applyBtn.onclick = async () => {
-    const from = parseFloat(fromInput.value) || 0;
-    const to = parseFloat(toInput.value) || 0;
-    if (to <= from){ toast("Конец должен быть позже начала"); return; }
-    item.trimStart = from; item.trimEnd = to;
-    item.trimmedMediaPath = null;
-    status.textContent = "Ожидает обрезки…";
-    try{ await saveManifest(`Обрезка задана: ${item.id} (${from}-${to}с)`); toast("Точки обрезки сохранены — скажи мне, когда применить"); }
-    catch(e){ toast("Ошибка: " + e.message); }
-  };
-  applyRow.appendChild(applyBtn);
-
   const status = document.createElement("span");
   status.className = "trim-status";
-  status.textContent = item.trimmedMediaPath ? "✂ обрезано"
-    : (item.trimStart != null && item.trimEnd != null) ? "Ожидает обрезки…" : "";
+  applyRow.appendChild(applyBtn);
   applyRow.appendChild(status);
   box.appendChild(applyRow);
+
+  function refreshUI(){
+    fromInput.value = from.toFixed(1);
+    toInput.value = to.toFixed(1);
+    if (duration > 0){
+      const lp = Math.min(100, Math.max(0, (from / duration) * 100));
+      const rp = Math.min(100, Math.max(0, (to / duration) * 100));
+      handleStart.style.left = lp + "%";
+      handleEnd.style.left = rp + "%";
+      range.style.left = lp + "%";
+      range.style.right = (100 - rp) + "%";
+    }
+    status.textContent = item.trimmedMediaPath ? "✂ обрезано (готово)"
+      : (item.trimStart != null && item.trimEnd != null) ? "Ожидает обрезки…" : `${fmtTime(from)} – ${fmtTime(to)}`;
+  }
+
+  function setDuration(d){
+    duration = d;
+    if (item.trimEnd == null) to = duration;
+    refreshUI();
+  }
+  if (videoEl){
+    if (videoEl.duration && isFinite(videoEl.duration)) setDuration(videoEl.duration);
+    videoEl.addEventListener("loadedmetadata", () => setDuration(videoEl.duration));
+  }
+
+  function timeFromClientX(clientX){
+    const rect = track.getBoundingClientRect();
+    const frac = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
+    return frac * (duration || 0);
+  }
+
+  function dragHandle(handleEl, isStart){
+    handleEl.addEventListener("pointerdown", (e) => {
+      e.preventDefault(); e.stopPropagation();
+      handleEl.setPointerCapture(e.pointerId);
+      const onMove = (ev) => {
+        const t = timeFromClientX(ev.clientX);
+        if (isStart){ from = Math.min(t, to - 0.1); if (from < 0) from = 0; }
+        else { to = Math.max(t, from + 0.1); if (to > duration) to = duration; }
+        if (videoEl) videoEl.currentTime = isStart ? from : to;
+        refreshUI();
+      };
+      const onUp = () => {
+        handleEl.removeEventListener("pointermove", onMove);
+        handleEl.removeEventListener("pointerup", onUp);
+        saveTrimPoints();
+      };
+      handleEl.addEventListener("pointermove", onMove);
+      handleEl.addEventListener("pointerup", onUp);
+    });
+  }
+  dragHandle(handleStart, true);
+  dragHandle(handleEnd, false);
+
+  track.addEventListener("click", (e) => {
+    if (e.target === handleStart || e.target === handleEnd) return;
+    const t = timeFromClientX(e.clientX);
+    if (videoEl) videoEl.currentTime = t;
+  });
+
+  fromInput.onchange = () => {
+    from = Math.min(parseFloat(fromInput.value) || 0, to - 0.1);
+    refreshUI(); saveTrimPoints();
+  };
+  toInput.onchange = () => {
+    to = Math.max(parseFloat(toInput.value) || 0, from + 0.1);
+    if (duration > 0) to = Math.min(to, duration);
+    refreshUI(); saveTrimPoints();
+  };
+  setBtn.onclick = (e) => { e.preventDefault(); if (videoEl){ from = Math.min(videoEl.currentTime, to - 0.1); refreshUI(); } };
+  setEndBtn.onclick = (e) => { e.preventDefault(); if (videoEl){ to = Math.max(videoEl.currentTime, from + 0.1); refreshUI(); } };
+
+  let saveTimer = null;
+  function saveTrimPoints(){
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(async () => {
+      item.trimStart = from; item.trimEnd = to;
+      item.trimmedMediaPath = null;
+      refreshUI();
+      try{ await saveManifest(`Точки обрезки: ${item.id} (${from.toFixed(1)}-${to.toFixed(1)}с)`); }
+      catch(e){ toast("Ошибка: " + e.message); }
+    }, 500);
+  }
+
+  applyBtn.onclick = async () => {
+    if (to <= from){ toast("Конец должен быть позже начала"); return; }
+    item.trimStart = from; item.trimEnd = to;
+    applyBtn.disabled = true;
+    const srcPath = item.mediaPath;
+    const ext = "." + srcPath.split(".").pop();
+    try{
+      status.textContent = "Готовлю…";
+      const blob = await trimVideoInBrowser(rawUrlFor(srcPath), from, to, ext, (msg) => { status.textContent = msg; });
+      status.textContent = "Загружаю результат в GitHub…";
+      const b64 = await fileToBase64(new File([blob], "trim.mp4", { type: "video/mp4" }));
+      const outPath = `media/${item.id}_trim${Date.now()}.mp4`;
+      await ghPutFile(outPath, b64, `Обрезка: ${item.id}`, null);
+      item.trimmedMediaPath = outPath;
+      await saveManifest(`Видео обрезано: ${item.id} (${from.toFixed(1)}-${to.toFixed(1)}с)`);
+      toast("Готово — видео обрезано");
+      render();
+    }catch(e){
+      console.error(e);
+      status.textContent = "Ошибка обрезки";
+      toast("Ошибка обрезки: " + e.message);
+    } finally {
+      applyBtn.disabled = false;
+    }
+  };
+
+  refreshUI();
+  return box;
+}
+
+// ---------- слой (второе медиа поверх фона) ----------
+let overlayDebounce = {};
+function saveOverlayDebounced(item){
+  clearTimeout(overlayDebounce[item.id]);
+  overlayDebounce[item.id] = setTimeout(async () => {
+    try{ await saveManifest(`Слой обновлён: ${item.id}`); }
+    catch(e){ toast("Ошибка: " + e.message); }
+  }, 400);
+}
+
+function makeOverlayLayer(item, mediaWrap){
+  const ov = item.overlay;
+  const layer = document.createElement("div");
+  layer.className = "overlay-layer";
+
+  function applyPos(){
+    layer.style.left = (ov.x * 100) + "%";
+    layer.style.top = (ov.y * 100) + "%";
+    layer.style.width = (ov.w * 100) + "%";
+    layer.style.aspectRatio = "1 / 1";
+    layer.style.transform = "translate(-50%,-50%)";
+  }
+  applyPos();
+
+  const rawUrl = rawUrlFor(ov.mediaPath);
+  if (ov.mediaType === "video"){
+    const v = document.createElement("video");
+    v.src = rawUrl; v.muted = true; v.playsInline = true; v.loop = true; v.autoplay = true;
+    layer.appendChild(v);
+  } else {
+    const img = document.createElement("img");
+    img.src = rawUrl;
+    layer.appendChild(img);
+  }
+
+  const removeBtn = document.createElement("div");
+  removeBtn.className = "overlay-remove";
+  removeBtn.textContent = "✕";
+  removeBtn.title = "Убрать слой";
+  removeBtn.onclick = async (e) => {
+    e.preventDefault(); e.stopPropagation();
+    item.overlay = null;
+    render();
+    try{ await saveManifest(`Слой убран: ${item.id}`); }
+    catch(err){ toast("Ошибка: " + err.message); }
+  };
+  layer.appendChild(removeBtn);
+
+  layer.addEventListener("pointerdown", (e) => {
+    if (e.target === removeBtn) return;
+    e.preventDefault(); e.stopPropagation();
+    layer.classList.add("dragging");
+    layer.setPointerCapture(e.pointerId);
+    const onMove = (ev) => {
+      const rect = mediaWrap.getBoundingClientRect();
+      ov.x = Math.min(1, Math.max(0, (ev.clientX - rect.left) / rect.width));
+      ov.y = Math.min(1, Math.max(0, (ev.clientY - rect.top) / rect.height));
+      applyPos();
+    };
+    const onUp = () => {
+      layer.classList.remove("dragging");
+      layer.removeEventListener("pointermove", onMove);
+      layer.removeEventListener("pointerup", onUp);
+      saveOverlayDebounced(item);
+    };
+    layer.addEventListener("pointermove", onMove);
+    layer.addEventListener("pointerup", onUp);
+  });
+
+  return layer;
+}
+
+async function uploadOverlayFile(item, file){
+  const ext = (file.name.split(".").pop() || "bin").toLowerCase();
+  const isVideo = file.type.startsWith("video/") || ["mp4","mov","m4v"].includes(ext);
+  const path = `media/${item.id}_overlay_${Date.now()}.${ext}`;
+  toast("Загружаю слой…");
+  const b64 = await fileToBase64(file);
+  await ghPutFile(path, b64, `Слой для ${item.id}`, null);
+  item.overlay = { mediaPath: path, mediaType: isVideo ? "video" : "image", x: 0.5, y: 0.35, w: 0.5 };
+  await saveManifest(`Слой добавлен: ${item.id}`);
+  render();
+  toast("Слой добавлен — перетащи по превью, чтобы разместить");
+}
+
+function makeLayerBox(item){
+  const box = document.createElement("div");
+  box.className = "layer-box";
+
+  const input = document.createElement("input");
+  input.type = "file"; input.accept = "image/*,video/*";
+  input.className = "layer-file-input";
+  input.onchange = (e) => {
+    if (e.target.files[0]) uploadOverlayFile(item, e.target.files[0]).catch(err => toast("Ошибка: " + err.message));
+    e.target.value = "";
+  };
+  box.appendChild(input);
+
+  if (!item.overlay){
+    const addBtn = document.createElement("button");
+    addBtn.textContent = "🖼️+ добавить слой";
+    addBtn.title = "Наложить второе фото/видео поверх этого";
+    addBtn.onclick = () => input.click();
+    box.appendChild(addBtn);
+  } else {
+    const label = document.createElement("span");
+    label.textContent = "размер слоя";
+    box.appendChild(label);
+
+    const slider = document.createElement("input");
+    slider.type = "range"; slider.min = "15"; slider.max = "100"; slider.step = "1";
+    slider.value = Math.round(item.overlay.w * 100);
+    slider.oninput = () => {
+      item.overlay.w = parseInt(slider.value, 10) / 100;
+      const layer = box.parentElement.querySelector(".overlay-layer");
+      if (layer) layer.style.width = (item.overlay.w * 100) + "%";
+    };
+    slider.onchange = () => saveOverlayDebounced(item);
+    box.appendChild(slider);
+
+    const replaceBtn = document.createElement("button");
+    replaceBtn.textContent = "заменить";
+    replaceBtn.onclick = () => input.click();
+    box.appendChild(replaceBtn);
+  }
 
   return box;
 }
@@ -559,11 +886,17 @@ function makeCard(item, index){
     empty.textContent = "Пусто — перетащи файл сюда";
     mediaWrap.appendChild(empty);
   }
+  if (item.overlay && item.overlay.mediaPath){
+    mediaWrap.appendChild(makeOverlayLayer(item, mediaWrap));
+  }
+
   card.appendChild(mediaWrap);
 
   if (item.mediaType === "video" && item.mediaPath){
     card.appendChild(makeTrimBox(item, videoEl));
   }
+
+  card.appendChild(makeLayerBox(item, mediaWrap));
 
   const ta = document.createElement("textarea");
   ta.className = "draft";
