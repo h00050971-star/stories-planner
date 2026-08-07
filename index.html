@@ -42,7 +42,7 @@
   button:hover{ background:#2e3442; }
   button.primary{ background: var(--accent); border-color: var(--accent); color:#fff; }
   button.primary:hover{ filter:brightness(1.08); }
-  #status-line{ font-size:12px; color:var(--muted); white-space:nowrap; }
+  #status-line{ font-size:12px; color:var(--muted); overflow-wrap:anywhere; max-width:100%; min-width:0; }
   #dropzone-hint{ font-size:12px; color:var(--muted); }
 
   main{ padding: 20px; }
@@ -61,13 +61,18 @@
   }
   .card.dragging{ opacity:.4; }
   .card.dragover{ outline: 2px dashed var(--accent); outline-offset:-2px; }
-  .badge{
-    position:absolute; top:8px; left:8px; z-index:3;
-    background:rgba(0,0,0,.6); color:#fff; font-weight:700; font-size:13px;
-    width:26px; height:26px; border-radius:50%; display:flex; align-items:center; justify-content:center;
+  .card-head{
+    display:flex; align-items:center; justify-content:space-between;
+    padding:6px 10px; flex-shrink:0;
   }
+  .badge{
+    background:rgba(255,255,255,.08); color:#fff; font-weight:700; font-size:13px;
+    width:24px; height:24px; border-radius:50%; display:flex; align-items:center; justify-content:center;
+  }
+  .head-right{ display:flex; align-items:center; gap:8px; }
+  .sparkle{ font-size:14px; }
   .status-dot{
-    position:absolute; top:14px; left:38px; z-index:3; width:10px; height:10px; border-radius:50%;
+    width:10px; height:10px; border-radius:50%; flex-shrink:0;
     background: var(--draft); box-shadow: 0 0 0 2px rgba(0,0,0,.4);
   }
   .status-dot.ready{ background: var(--ready); }
@@ -337,22 +342,29 @@ function makeCard(item, index){
   card.draggable = true;
   card.dataset.id = item.id;
 
+  const head = document.createElement("div");
+  head.className = "card-head";
+
   const badge = document.createElement("div");
   badge.className = "badge";
   badge.textContent = index + 1;
-  card.appendChild(badge);
+  head.appendChild(badge);
 
-  const dot = document.createElement("div");
-  dot.className = "status-dot" + (item.status === "ready" ? " ready" : "");
-  card.appendChild(dot);
-
+  const headRight = document.createElement("div");
+  headRight.className = "head-right";
   if (item.finalMediaPath){
-    const sparkle = document.createElement("div");
+    const sparkle = document.createElement("span");
+    sparkle.className = "sparkle";
     sparkle.textContent = "✨";
     sparkle.title = "Текст оформлен";
-    sparkle.style.cssText = "position:absolute;bottom:8px;right:8px;z-index:3;font-size:16px;";
-    card.appendChild(sparkle);
+    headRight.appendChild(sparkle);
   }
+  const dot = document.createElement("div");
+  dot.className = "status-dot" + (item.status === "ready" ? " ready" : "");
+  headRight.appendChild(dot);
+  head.appendChild(headRight);
+
+  card.appendChild(head);
 
   const mediaWrap = document.createElement("div");
   mediaWrap.className = "media-wrap";
