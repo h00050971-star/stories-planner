@@ -316,10 +316,19 @@ function makeCard(item, index){
   dot.className = "status-dot" + (item.status === "ready" ? " ready" : "");
   card.appendChild(dot);
 
+  if (item.finalMediaPath){
+    const sparkle = document.createElement("div");
+    sparkle.textContent = "✨";
+    sparkle.title = "Текст оформлен";
+    sparkle.style.cssText = "position:absolute;bottom:8px;right:8px;z-index:3;font-size:16px;";
+    card.appendChild(sparkle);
+  }
+
   const mediaWrap = document.createElement("div");
   mediaWrap.className = "media-wrap";
-  if (item.mediaPath){
-    const rawUrl = `https://raw.githubusercontent.com/${OWNER}/${REPO}/${BRANCH}/${item.mediaPath}`;
+  const displayPath = item.finalMediaPath || item.mediaPath;
+  if (displayPath){
+    const rawUrl = `https://raw.githubusercontent.com/${OWNER}/${REPO}/${BRANCH}/${displayPath}`;
     if (item.mediaType === "video"){
       const v = document.createElement("video");
       v.src = rawUrl; v.controls = true; v.muted = true; v.playsInline = true;
