@@ -91,12 +91,31 @@
     font-family:inherit;
   }
   .card-footer{
-    display:flex; gap:6px; padding:8px; border-top:1px solid var(--border); background:var(--panel);
+    display:flex; align-items:center; gap:6px; padding:8px; border-top:1px solid var(--border); background:var(--panel);
     flex-shrink:0;
   }
-  .card-footer button{ flex:1; padding:6px 4px; font-size:11px; }
+  .card-footer .left-group{ display:flex; gap:6px; }
+  .card-footer button{ padding:6px 8px; font-size:11px; }
   .card-footer button.ready-btn.is-ready{ background: var(--ready); border-color:var(--ready); color:#06281a; }
   .card-footer button.del-btn:hover{ background:#4a2130; border-color:#7a2f45; }
+  .card-footer button.dl-btn{ margin-left:auto; }
+  .select-check{ width:16px; height:16px; cursor:pointer; }
+  .trim-box{
+    flex-shrink:0; display:flex; flex-direction:column; gap:6px; padding:8px 10px;
+    border-top:1px solid var(--border); background:rgba(255,255,255,.03);
+  }
+  .trim-box .trim-row{ display:flex; align-items:center; gap:6px; font-size:11px; color:var(--muted); }
+  .trim-box input[type=number]{
+    width:56px; background:#0f1115; color:var(--text); border:1px solid var(--border);
+    border-radius:6px; padding:4px 6px; font-size:12px;
+  }
+  .trim-box button{ font-size:11px; padding:5px 8px; }
+  .trim-status{ font-size:11px; color:var(--muted); }
+  #toolbar{
+    display:flex; gap:8px; align-items:center; padding: 0 20px 14px;
+  }
+  #toolbar button{ font-size:12px; }
+  @media (max-width: 700px){ #toolbar{ padding: 0 12px 12px; flex-wrap:wrap; } }
 
   #add-card{
     width: var(--card-w); aspect-ratio:9/16; border:2px dashed var(--border); border-radius:14px;
@@ -127,6 +146,11 @@
   <div class="spacer"></div>
   <span id="status-line">—</span>
 </header>
+<div id="toolbar">
+  <button id="dl-all-btn">⬇ Скачать всё</button>
+  <button id="dl-selected-btn">⬇ Скачать выбранное</button>
+  <span id="dl-status" style="font-size:12px;color:var(--muted);"></span>
+</div>
 <main>
   <div id="track"></div>
 </main>
@@ -136,6 +160,7 @@
 <div class="toast" id="toast"></div>
 <input type="file" id="file-input" accept="image/*,video/*" multiple>
 
+<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
 <script>
 const OWNER = "h00050971-star";
 const REPO = "stories-planner";
@@ -145,6 +170,14 @@ const API = `https://api.github.com/repos/${OWNER}/${REPO}`;
 let manifest = [];
 let manifestSha = null;
 let zoom = parseInt(localStorage.getItem("sp_zoom") || "100", 10);
+let selectedIds = new Set();
+
+function displayPathFor(item){
+  return item.trimmedMediaPath || item.finalMediaPath || item.mediaPath;
+}
+function rawUrlFor(path){
+  return `https://raw.githubusercontent.com/${OWNER}/${REPO}/${BRANCH}/${path}`;
+}
 
 // ---------- токен ----------
 function getToken(){ return localStorage.getItem("sp_gh_token") || ""; }
@@ -336,6 +369,134 @@ function debounceSaveDraft(id, text){
   }, 1200);
 }
 
+// ---------- скачивание ----------
+async function fetchAsBlob(path){
+  const r = await fetch(rawUrlFor(path) + `?t=${Date.now()}`);
+  if (!r.ok) throw new Error(`Скачивание ${path} не удалось: ${r.status}`);
+  return await r.blob();
+}
+
+function triggerBlobDownload(blob, filename){
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 4000);
+}
+
+async function downloadOne(item){
+  const path = displayPathFor(item);
+  if (!path){ toast("Нечего скачивать — слот пуст"); return; }
+  try{
+    toast("Скачиваю…");
+    const blob = await fetchAsBlob(path);
+    triggerBlobDownload(blob, path.split("/").pop());
+    toast("Скачано");
+  }catch(e){ toast("Ошибка: " + e.message); }
+}
+
+async function downloadMany(items, zipName){
+  if (!items.length){ toast("Нечего скачивать"); return; }
+  const dlStatus = document.getElementById("dl-status");
+  const zip = new JSZip();
+  let done = 0;
+  for (const item of items){
+    const path = displayPathFor(item);
+    if (!path) continue;
+    dlStatus.textContent = `Качаю ${++done}/${items.length}…`;
+    try{
+      const blob = await fetchAsBlob(path);
+      zip.file(path.split("/").pop(), blob);
+    }catch(e){ console.error(e); }
+  }
+  dlStatus.textContent = "Собираю архив…";
+  const content = await zip.generateAsync({ type: "blob" });
+  triggerBlobDownload(content, zipName);
+  dlStatus.textContent = "Готово";
+  setTimeout(() => { dlStatus.textContent = ""; }, 3000);
+}
+
+document.getElementById("dl-all-btn").onclick = () => {
+  downloadMany([...manifest].sort((a,b) => a.order - b.order), "stories.zip");
+};
+document.getElementById("dl-selected-btn").onclick = () => {
+  const items = manifest.filter(m => selectedIds.has(m.id)).sort((a,b) => a.order - b.order);
+  if (!items.length){ toast("Ничего не выбрано — отметь галочки на карточках"); return; }
+  downloadMany(items, "stories_selected.zip");
+};
+
+// ---------- обрезка видео ----------
+// Реальную обрезку (ffmpeg) делает отдельный скрипт trim_video.py — здесь только
+// задаются точки "с/по" и сохраняются в манифест, обработка идёт по команде.
+function makeTrimBox(item, videoEl){
+  const box = document.createElement("div");
+  box.className = "trim-box";
+
+  const row = document.createElement("div");
+  row.className = "trim-row";
+
+  const fromInput = document.createElement("input");
+  fromInput.type = "number"; fromInput.min = "0"; fromInput.step = "0.1";
+  fromInput.value = item.trimStart != null ? item.trimStart : 0;
+
+  const toInput = document.createElement("input");
+  toInput.type = "number"; toInput.min = "0"; toInput.step = "0.1";
+  toInput.value = item.trimEnd != null ? item.trimEnd : "";
+  toInput.placeholder = "конец";
+
+  if (videoEl){
+    videoEl.addEventListener("loadedmetadata", () => {
+      if (item.trimEnd == null) toInput.value = videoEl.duration.toFixed(1);
+      toInput.max = videoEl.duration.toFixed(1);
+    });
+  }
+
+  const setBtn = document.createElement("button");
+  setBtn.textContent = "◀ с текущего";
+  setBtn.title = "Взять текущее время плеера как начало";
+  setBtn.onclick = (e) => { e.preventDefault(); if (videoEl) fromInput.value = videoEl.currentTime.toFixed(1); };
+
+  const setEndBtn = document.createElement("button");
+  setEndBtn.textContent = "текущего ▶";
+  setEndBtn.title = "Взять текущее время плеера как конец";
+  setEndBtn.onclick = (e) => { e.preventDefault(); if (videoEl) toInput.value = videoEl.currentTime.toFixed(1); };
+
+  row.appendChild(document.createTextNode("с"));
+  row.appendChild(fromInput);
+  row.appendChild(document.createTextNode("по"));
+  row.appendChild(toInput);
+  row.appendChild(setBtn);
+  row.appendChild(setEndBtn);
+  box.appendChild(row);
+
+  const applyRow = document.createElement("div");
+  applyRow.className = "trim-row";
+
+  const applyBtn = document.createElement("button");
+  applyBtn.textContent = "✂ Обрезать";
+  applyBtn.className = "primary";
+  applyBtn.onclick = async () => {
+    const from = parseFloat(fromInput.value) || 0;
+    const to = parseFloat(toInput.value) || 0;
+    if (to <= from){ toast("Конец должен быть позже начала"); return; }
+    item.trimStart = from; item.trimEnd = to;
+    item.trimmedMediaPath = null;
+    status.textContent = "Ожидает обрезки…";
+    try{ await saveManifest(`Обрезка задана: ${item.id} (${from}-${to}с)`); toast("Точки обрезки сохранены — скажи мне, когда применить"); }
+    catch(e){ toast("Ошибка: " + e.message); }
+  };
+  applyRow.appendChild(applyBtn);
+
+  const status = document.createElement("span");
+  status.className = "trim-status";
+  status.textContent = item.trimmedMediaPath ? "✂ обрезано"
+    : (item.trimStart != null && item.trimEnd != null) ? "Ожидает обрезки…" : "";
+  applyRow.appendChild(status);
+  box.appendChild(applyRow);
+
+  return box;
+}
+
 function makeCard(item, index){
   const card = document.createElement("div");
   card.className = "card";
@@ -352,6 +513,16 @@ function makeCard(item, index){
 
   const headRight = document.createElement("div");
   headRight.className = "head-right";
+  const check = document.createElement("input");
+  check.type = "checkbox";
+  check.className = "select-check";
+  check.title = "Выбрать для скачивания";
+  check.checked = selectedIds.has(item.id);
+  check.onclick = (e) => e.stopPropagation();
+  check.onchange = () => {
+    if (check.checked) selectedIds.add(item.id); else selectedIds.delete(item.id);
+  };
+  headRight.appendChild(check);
   if (item.finalMediaPath){
     const sparkle = document.createElement("span");
     sparkle.className = "sparkle";
@@ -368,13 +539,15 @@ function makeCard(item, index){
 
   const mediaWrap = document.createElement("div");
   mediaWrap.className = "media-wrap";
-  const displayPath = item.finalMediaPath || item.mediaPath;
+  const displayPath = displayPathFor(item);
+  let videoEl = null;
   if (displayPath){
-    const rawUrl = `https://raw.githubusercontent.com/${OWNER}/${REPO}/${BRANCH}/${displayPath}`;
+    const rawUrl = rawUrlFor(displayPath);
     if (item.mediaType === "video"){
       const v = document.createElement("video");
       v.src = rawUrl; v.controls = true; v.muted = false; v.playsInline = true;
       mediaWrap.appendChild(v);
+      videoEl = v;
     } else {
       const img = document.createElement("img");
       img.src = rawUrl;
@@ -388,6 +561,10 @@ function makeCard(item, index){
   }
   card.appendChild(mediaWrap);
 
+  if (item.mediaType === "video" && item.mediaPath){
+    card.appendChild(makeTrimBox(item, videoEl));
+  }
+
   const ta = document.createElement("textarea");
   ta.className = "draft";
   ta.placeholder = "Текст на сторис…";
@@ -398,6 +575,9 @@ function makeCard(item, index){
   const footer = document.createElement("div");
   footer.className = "card-footer";
 
+  const leftGroup = document.createElement("div");
+  leftGroup.className = "left-group";
+
   const readyBtn = document.createElement("button");
   readyBtn.className = "ready-btn" + (item.status === "ready" ? " is-ready" : "");
   readyBtn.textContent = item.status === "ready" ? "✓ готово" : "к публикации";
@@ -407,7 +587,7 @@ function makeCard(item, index){
     try{ await saveManifest(`Статус ${item.id}: ${item.status}`); toast("Статус обновлён"); }
     catch(e){ toast("Ошибка: " + e.message); }
   };
-  footer.appendChild(readyBtn);
+  leftGroup.appendChild(readyBtn);
 
   const delBtn = document.createElement("button");
   delBtn.className = "del-btn";
@@ -420,7 +600,16 @@ function makeCard(item, index){
     try{ await saveManifest(`Удалён слот ${item.id}`); toast("Удалено"); }
     catch(e){ toast("Ошибка: " + e.message); }
   };
-  footer.appendChild(delBtn);
+  leftGroup.appendChild(delBtn);
+
+  footer.appendChild(leftGroup);
+
+  const dlBtn = document.createElement("button");
+  dlBtn.className = "dl-btn";
+  dlBtn.textContent = "⬇";
+  dlBtn.title = "Скачать";
+  dlBtn.onclick = () => downloadOne(item);
+  footer.appendChild(dlBtn);
 
   card.appendChild(footer);
 
