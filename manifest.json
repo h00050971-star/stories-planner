@@ -6,6 +6,7 @@
   "mediaType": "image",
   "draftText": "Тест шрифтовой пары\nПроверка рендера",
   "status": "draft",
-  "platforms": []
+  "platforms": [],
+  "finalMediaPath": "media/test_render_1_final.jpg"
  }
 ]
