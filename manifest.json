@@ -9,7 +9,7 @@
   "platforms": [],
   "trimStart": 0,
   "trimEnd": 27.905119876674345,
-  "trimmedMediaPath": null
+  "trimmedMediaPath": "media/s1786150936135rr2g6_trim1786151587376.mp4"
  },
  {
   "id": "s1786151019952eqato",
@@ -19,8 +19,8 @@
   "draftText": "",
   "status": "draft",
   "platforms": [],
-  "trimStart": 28.2,
-  "trimEnd": 29.404243007927782,
+  "trimStart": null,
+  "trimEnd": null,
   "trimmedMediaPath": null
  },
  {
@@ -30,8 +30,6 @@
   "mediaType": "video",
   "draftText": "",
   "status": "draft",
-  "platforms": [],
-  "trimStart": 0,
-  "trimEnd": 11.621034
+  "platforms": []
  }
 ]
