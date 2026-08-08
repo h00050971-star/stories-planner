@@ -1,19 +1,19 @@
 [
  {
   "id": "s1786150936135rr2g6",
-  "order": 3,
+  "order": 4,
   "mediaPath": "media/s1786150936135rr2g6.mp4",
   "mediaType": "video",
   "draftText": "",
   "status": "draft",
   "platforms": [],
-  "trimStart": 0,
-  "trimEnd": 27.905119876674345,
-  "trimmedMediaPath": "media/s1786150936135rr2g6_trim1786151587376.mp4"
+  "trimStart": 16.9,
+  "trimEnd": 58.291667,
+  "trimmedMediaPath": null
  },
  {
   "id": "s1786151019952eqato",
-  "order": 1,
+  "order": 3,
   "mediaPath": "media/s1786151019952eqato.mp4",
   "mediaType": "video",
   "draftText": "",
@@ -34,14 +34,24 @@
  },
  {
   "id": "s1786153366844y2kqk",
-  "order": 4,
+  "order": 1,
   "mediaPath": "media/s1786153366844y2kqk.mp4",
   "mediaType": "video",
   "draftText": "",
   "status": "draft",
   "platforms": [],
-  "trimStart": 76.2,
-  "trimEnd": 117.466667,
+  "trimStart": null,
+  "trimEnd": null,
   "trimmedMediaPath": null
+ },
+ {
+  "id": "s1786155333295wlh85",
+  "order": 5,
+  "mediaPath": "media/s1786155333295wlh85.jpg",
+  "mediaType": "image",
+  "draftText": "У большинства владельцев брендов на старте одни и те же сомнения:\n\nне понимаю, что вообще снимать\nстрашно показать продукт, вдруг не зайдёт\nуже пробовали рекламу, слили бюджет в никуда\nне верю, что от роликов будут продажи\n\nУ Василия было ровно так же. А потом один целевой рилс - и пошли подписчики, следом продажи. Услуги продюсера (то есть мои) отбились с первого захода",
+  "status": "draft",
+  "platforms": [],
+  "overlay": null
  }
 ]
