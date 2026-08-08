@@ -40,9 +40,9 @@
   "draftText": "",
   "status": "draft",
   "platforms": [],
-  "trimStart": 76,
-  "trimEnd": 76.1,
-  "trimmedMediaPath": "media/s1786153366844y2kqk_trim1786155670412.mp4"
+  "trimStart": null,
+  "trimEnd": null,
+  "trimmedMediaPath": null
  },
  {
   "id": "s1786155333295wlh85",
