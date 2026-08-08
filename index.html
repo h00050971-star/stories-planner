@@ -84,14 +84,29 @@
   .overlay-layer.dragging{ cursor:grabbing; opacity:.85; }
   .overlay-layer img, .overlay-layer video{ display:block; width:100%; height:100%; object-fit:cover; pointer-events:none; }
   .overlay-remove{
-    position:absolute; top:-10px; right:-10px; z-index:6; width:22px; height:22px; border-radius:50%;
-    background:#4a2130; border:1px solid #7a2f45; color:#fff; font-size:12px; line-height:1;
+    position:absolute; top:6px; right:6px; z-index:6; width:26px; height:26px; border-radius:50%;
+    background:#4a2130; border:1px solid #7a2f45; color:#fff; font-size:13px; line-height:1;
     display:flex; align-items:center; justify-content:center; cursor:pointer;
   }
   .layer-box{
     flex-shrink:0; display:flex; align-items:center; gap:8px; padding:6px 10px;
     border-top:1px solid var(--border); background:rgba(255,255,255,.03); font-size:11px; color:var(--muted);
   }
+  .text-overlay-layer{
+    position:absolute; z-index:5; cursor:grab; touch-action:none; transform:translate(-50%,-50%);
+    font-family:Arial, Helvetica, sans-serif; font-weight:700; white-space:pre-wrap; text-align:center;
+    user-select:none; padding:4px 8px; line-height:1.15; max-width:88%;
+  }
+  .text-overlay-layer.dragging{ cursor:grabbing; opacity:.85; }
+  .text-box{
+    flex-shrink:0; display:flex; align-items:center; flex-wrap:wrap; gap:8px; padding:6px 10px;
+    border-top:1px solid var(--border); background:rgba(255,255,255,.03); font-size:11px; color:var(--muted);
+  }
+  .text-box input[type=text]{ flex:1; min-width:80px; }
+  .text-box .color-btn{ width:24px; height:24px; border-radius:50%; border:2px solid var(--border); cursor:pointer; padding:0; }
+  .text-box .color-btn.white{ background:#fff; }
+  .text-box .color-btn.black{ background:#000; }
+  .text-box .color-btn.active{ border-color:var(--accent); }
   .layer-box button{ font-size:11px; padding:5px 8px; }
   .layer-box input[type=range]{ flex:1; }
   .layer-file-input{ display:none; }
@@ -947,6 +962,127 @@ function makeLayerBox(item){
   return box;
 }
 
+// ---------- текст поверх фото/видео ----------
+let textOverlayDebounce = {};
+function saveTextOverlayDebounced(item){
+  clearTimeout(textOverlayDebounce[item.id]);
+  textOverlayDebounce[item.id] = setTimeout(async () => {
+    try{ await saveManifest(`Текст на сторис обновлён: ${item.id}`); }
+    catch(e){ toast("Ошибка: " + e.message); }
+  }, 400);
+}
+
+function applyTextOverlayStyle(el, item, mediaWrap){
+  const t = item.textOverlay;
+  el.style.left = (t.x * 100) + "%";
+  el.style.top = (t.y * 100) + "%";
+  el.style.color = t.color === "black" ? "#000" : "#fff";
+  el.style.fontSize = Math.round((t.size || 0.07) * mediaWrap.clientWidth) + "px";
+}
+
+function makeTextOverlay(item, mediaWrap){
+  const el = document.createElement("div");
+  el.className = "text-overlay-layer";
+  el.textContent = item.textOverlay.text || "Текст";
+  applyTextOverlayStyle(el, item, mediaWrap);
+
+  el.addEventListener("pointerdown", (e) => {
+    e.preventDefault();
+    el.setPointerCapture(e.pointerId);
+    el.classList.add("dragging");
+    const onMove = (ev) => {
+      const rect = mediaWrap.getBoundingClientRect();
+      let x = (ev.clientX - rect.left) / rect.width;
+      let y = (ev.clientY - rect.top) / rect.height;
+      item.textOverlay.x = Math.min(1, Math.max(0, x));
+      item.textOverlay.y = Math.min(1, Math.max(0, y));
+      applyTextOverlayStyle(el, item, mediaWrap);
+    };
+    const onUp = () => {
+      el.classList.remove("dragging");
+      el.removeEventListener("pointermove", onMove);
+      el.removeEventListener("pointerup", onUp);
+      saveTextOverlayDebounced(item);
+    };
+    el.addEventListener("pointermove", onMove);
+    el.addEventListener("pointerup", onUp);
+  });
+
+  return el;
+}
+
+function makeTextBox(item, mediaWrap){
+  const box = document.createElement("div");
+  box.className = "text-box";
+
+  if (!item.textOverlay){
+    const addBtn = document.createElement("button");
+    addBtn.textContent = "Т+ добавить текст";
+    addBtn.title = "Наложить текст поверх фото/видео";
+    addBtn.onclick = () => {
+      item.textOverlay = { text: "Текст", color: "white", size: 0.07, x: 0.5, y: 0.5 };
+      render();
+      saveManifest(`Текст на сторис добавлен: ${item.id}`).catch(e => toast("Ошибка: " + e.message));
+    };
+    box.appendChild(addBtn);
+    return box;
+  }
+
+  const textInput = document.createElement("input");
+  textInput.type = "text";
+  textInput.value = item.textOverlay.text;
+  textInput.oninput = () => {
+    item.textOverlay.text = textInput.value;
+    const layer = mediaWrap.querySelector(".text-overlay-layer");
+    if (layer) layer.textContent = textInput.value || "Текст";
+    saveTextOverlayDebounced(item);
+  };
+  box.appendChild(textInput);
+
+  const whiteBtn = document.createElement("button");
+  whiteBtn.className = "color-btn white" + (item.textOverlay.color !== "black" ? " active" : "");
+  whiteBtn.title = "Белый текст";
+  const blackBtn = document.createElement("button");
+  blackBtn.className = "color-btn black" + (item.textOverlay.color === "black" ? " active" : "");
+  blackBtn.title = "Чёрный текст";
+  function setColor(c){
+    item.textOverlay.color = c;
+    whiteBtn.classList.toggle("active", c !== "black");
+    blackBtn.classList.toggle("active", c === "black");
+    const layer = mediaWrap.querySelector(".text-overlay-layer");
+    if (layer) applyTextOverlayStyle(layer, item, mediaWrap);
+    saveTextOverlayDebounced(item);
+  }
+  whiteBtn.onclick = () => setColor("white");
+  blackBtn.onclick = () => setColor("black");
+  box.appendChild(whiteBtn);
+  box.appendChild(blackBtn);
+
+  const sizeSlider = document.createElement("input");
+  sizeSlider.type = "range"; sizeSlider.min = "3"; sizeSlider.max = "16"; sizeSlider.step = "0.5";
+  sizeSlider.value = Math.round((item.textOverlay.size || 0.07) * 100);
+  sizeSlider.title = "Кегль";
+  sizeSlider.oninput = () => {
+    item.textOverlay.size = parseFloat(sizeSlider.value) / 100;
+    const layer = mediaWrap.querySelector(".text-overlay-layer");
+    if (layer) applyTextOverlayStyle(layer, item, mediaWrap);
+  };
+  sizeSlider.onchange = () => saveTextOverlayDebounced(item);
+  box.appendChild(sizeSlider);
+
+  const removeBtn = document.createElement("button");
+  removeBtn.textContent = "✕";
+  removeBtn.title = "Убрать текст";
+  removeBtn.onclick = () => {
+    item.textOverlay = null;
+    render();
+    saveManifest(`Текст на сторис убран: ${item.id}`).catch(e => toast("Ошибка: " + e.message));
+  };
+  box.appendChild(removeBtn);
+
+  return box;
+}
+
 function makeCard(item, index){
   const card = document.createElement("div");
   card.className = "card";
@@ -1011,6 +1147,9 @@ function makeCard(item, index){
   if (item.overlay && item.overlay.mediaPath){
     mediaWrap.appendChild(makeOverlayLayer(item, mediaWrap));
   }
+  if (item.textOverlay){
+    mediaWrap.appendChild(makeTextOverlay(item, mediaWrap));
+  }
 
   card.appendChild(mediaWrap);
 
@@ -1019,6 +1158,7 @@ function makeCard(item, index){
   }
 
   card.appendChild(makeLayerBox(item, mediaWrap));
+  card.appendChild(makeTextBox(item, mediaWrap));
 
   const ta = document.createElement("textarea");
   ta.className = "draft";
