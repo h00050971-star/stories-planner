@@ -43,14 +43,5 @@
   "trimStart": 76,
   "trimEnd": 117.466667,
   "trimmedMediaPath": "media/s1786153366844y2kqk_trim1786155098923.mp4"
- },
- {
-  "id": "s178615531463002yu4",
-  "order": 5,
-  "mediaPath": "media/s178615531463002yu4.webp",
-  "mediaType": "image",
-  "draftText": "",
-  "status": "draft",
-  "platforms": []
  }
 ]
