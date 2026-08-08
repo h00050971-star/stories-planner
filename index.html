@@ -477,6 +477,26 @@ function openPreview(item){
     img.src = rawUrl;
     box.appendChild(img);
   }
+  if (item.overlay && item.overlay.mediaPath){
+    const ov = document.createElement(item.overlay.mediaType === "video" ? "video" : "img");
+    ov.src = rawUrlFor(item.overlay.mediaPath);
+    if (item.overlay.mediaType === "video"){ ov.autoplay = true; ov.muted = true; ov.loop = true; ov.playsInline = true; }
+    ov.style.cssText = `position:absolute;left:${item.overlay.x * 100}%;top:${item.overlay.y * 100}%;` +
+      `width:${item.overlay.w * 100}%;transform:translate(-50%,-50%);border-radius:6px;`;
+    box.appendChild(ov);
+  }
+  if (item.textOverlay && item.textOverlay.text){
+    const t = document.createElement("div");
+    t.textContent = item.textOverlay.text;
+    t.style.cssText = "position:absolute;font-family:Arial,Helvetica,sans-serif;font-weight:700;" +
+      "white-space:pre-wrap;text-align:center;max-width:88%;transform:translate(-50%,-50%);" +
+      `left:${item.textOverlay.x * 100}%;top:${item.textOverlay.y * 100}%;` +
+      `color:${item.textOverlay.color === "black" ? "#000" : "#fff"};`;
+    box.appendChild(t);
+    requestAnimationFrame(() => {
+      t.style.fontSize = Math.round((item.textOverlay.size || 0.07) * box.clientWidth) + "px";
+    });
+  }
   document.getElementById("preview-modal").classList.add("show");
 }
 function closePreview(){
@@ -619,13 +639,67 @@ function mimeFor(filename){
   return map[ext] || "application/octet-stream";
 }
 
+function loadImageEl(url){
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error("Не удалось загрузить изображение"));
+    img.src = url;
+  });
+}
+
+// вшивает текстовый слой прямо в фото (кадрирование 9:16, как на карточке)
+async function compositeImageWithText(item){
+  const path = displayPathFor(item);
+  const img = await loadImageEl(rawUrlFor(path) + `?t=${Date.now()}`);
+  const OUT_W = 1080, OUT_H = 1920;
+  const canvas = document.createElement("canvas");
+  canvas.width = OUT_W; canvas.height = OUT_H;
+  const ctx = canvas.getContext("2d");
+
+  const srcRatio = img.naturalWidth / img.naturalHeight;
+  const dstRatio = OUT_W / OUT_H;
+  let sx, sy, sw, sh;
+  if (srcRatio > dstRatio){
+    sh = img.naturalHeight; sw = sh * dstRatio;
+    sx = (img.naturalWidth - sw) / 2; sy = 0;
+  } else {
+    sw = img.naturalWidth; sh = sw / dstRatio;
+    sx = 0; sy = (img.naturalHeight - sh) / 2;
+  }
+  ctx.drawImage(img, sx, sy, sw, sh, 0, 0, OUT_W, OUT_H);
+
+  const t = item.textOverlay;
+  const fontSize = Math.round((t.size || 0.07) * OUT_W);
+  ctx.font = `700 ${fontSize}px Arial, Helvetica, sans-serif`;
+  ctx.fillStyle = t.color === "black" ? "#000" : "#fff";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  const x = t.x * OUT_W, y = t.y * OUT_H;
+  const lines = String(t.text).split("\n");
+  const lineHeight = fontSize * 1.15;
+  const startY = y - ((lines.length - 1) * lineHeight) / 2;
+  lines.forEach((line, i) => ctx.fillText(line, x, startY + i * lineHeight));
+
+  return await new Promise(resolve => canvas.toBlob(resolve, "image/jpeg", 0.92));
+}
+
 async function downloadOne(item, btnEl){
   const path = displayPathFor(item);
   if (!path){ toast("Нечего скачивать — слот пуст"); return; }
-  const filename = path.split("/").pop();
+  const hasText = item.textOverlay && item.textOverlay.text;
   try{
-    toast("Скачиваю…");
-    const blob = await fetchAsBlob(path);
+    toast(hasText && item.mediaType === "image" ? "Вшиваю текст…" : "Скачиваю…");
+    let blob, filename;
+    if (hasText && item.mediaType === "image"){
+      blob = await compositeImageWithText(item);
+      filename = path.split("/").pop().replace(/\.[^.]+$/, "") + "_text.jpg";
+    } else {
+      blob = await fetchAsBlob(path);
+      filename = path.split("/").pop();
+      if (hasText) toast("В видео текст пока не вшивается — только в планировщике");
+    }
     const file = new File([blob], filename, { type: blob.type || mimeFor(filename) });
     // сетевая загрузка съедает время между тапом и вызовом — Safari может уже не считать
     // это действием пользователя и тихо откажет в шеринге. Поэтому: файл уже готов,
@@ -663,8 +737,14 @@ async function downloadMany(items, zipName){
     if (!path) continue;
     dlStatus.textContent = `Качаю ${++done}/${items.length}…`;
     try{
-      const blob = await fetchAsBlob(path);
-      zip.file(path.split("/").pop(), blob);
+      const hasText = item.textOverlay && item.textOverlay.text;
+      if (hasText && item.mediaType === "image"){
+        const blob = await compositeImageWithText(item);
+        zip.file(path.split("/").pop().replace(/\.[^.]+$/, "") + "_text.jpg", blob);
+      } else {
+        const blob = await fetchAsBlob(path);
+        zip.file(path.split("/").pop(), blob);
+      }
     }catch(e){ console.error(e); }
   }
   dlStatus.textContent = "Собираю архив…";
