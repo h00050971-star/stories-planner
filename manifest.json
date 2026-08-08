@@ -19,9 +19,9 @@
   "draftText": "",
   "status": "draft",
   "platforms": [],
-  "trimStart": null,
-  "trimEnd": null,
-  "trimmedMediaPath": null
+  "trimStart": 0,
+  "trimEnd": 57.44019574302728,
+  "trimmedMediaPath": "media/s1786151019952eqato_trim1786154003769.mp4"
  },
  {
   "id": "s1786151413040lzlgd",
