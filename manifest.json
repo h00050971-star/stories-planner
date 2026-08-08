@@ -6,7 +6,10 @@
   "mediaType": "video",
   "draftText": "",
   "status": "draft",
-  "platforms": []
+  "platforms": [],
+  "trimStart": 0,
+  "trimEnd": 27.905119876674345,
+  "trimmedMediaPath": "media/s1786150936135rr2g6_trim1786151587376.mp4"
  },
  {
   "id": "s1786151019952eqato",
