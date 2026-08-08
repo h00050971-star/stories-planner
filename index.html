@@ -117,6 +117,12 @@
   .card-footer button.ready-btn.is-ready{ background: var(--ready); border-color:var(--ready); color:#06281a; }
   .card-footer button.del-btn:hover{ background:#4a2130; border-color:#7a2f45; }
   .card-footer button.dl-btn{ margin-left:auto; }
+  .card-footer button.move-prev::before{ content:"▲"; }
+  .card-footer button.move-next::before{ content:"▼"; }
+  @media (min-width:701px){
+    .card-footer button.move-prev::before{ content:"◀"; }
+    .card-footer button.move-next::before{ content:"▶"; }
+  }
   .select-check{ width:16px; height:16px; cursor:pointer; }
   .trim-box{
     flex-shrink:0; display:flex; flex-direction:column; gap:6px; padding:8px 10px;
@@ -277,9 +283,9 @@ async function compressVideoInBrowser(file, onStatus){
   try{
     await ff.exec([
       "-i", inName,
-      "-vf", "scale=if(gt(iw\\,ih)\\,min(960\\,iw)\\,-2):if(gt(iw\\,ih)\\,-2\\,min(960\\,ih))",
-      "-r", "24",
-      "-c:v", "libx264", "-crf", "30", "-preset", "ultrafast",
+      "-vf", "scale=if(gt(iw\\,ih)\\,min(640\\,iw)\\,-2):if(gt(iw\\,ih)\\,-2\\,min(640\\,ih))",
+      "-r", "15",
+      "-c:v", "libx264", "-crf", "32", "-preset", "ultrafast",
       "-c:a", "aac", "-b:a", "96k", "-movflags", "+faststart", outName,
     ]);
   } finally {
@@ -378,6 +384,18 @@ async function saveManifest(message){
 
 function nextOrder(){
   return manifest.length ? Math.max(...manifest.map(m => m.order)) + 1 : 1;
+}
+
+function moveItem(item, direction){
+  const sorted = [...manifest].sort((a, b) => a.order - b.order);
+  const idx = sorted.findIndex(m => m.id === item.id);
+  const other = sorted[idx + direction];
+  if (!other) return;
+  const tmp = item.order;
+  item.order = other.order;
+  other.order = tmp;
+  render();
+  saveManifest(`Порядок: ${item.id} <-> ${other.id}`).catch(e => toast("Ошибка: " + e.message));
 }
 
 // ---------- UI helpers ----------
@@ -987,6 +1005,18 @@ function makeCard(item, index){
     catch(e){ toast("Ошибка: " + e.message); }
   };
   leftGroup.appendChild(readyBtn);
+
+  const moveUpBtn = document.createElement("button");
+  moveUpBtn.className = "move-prev";
+  moveUpBtn.title = "Переместить раньше";
+  moveUpBtn.onclick = () => moveItem(item, -1);
+  leftGroup.appendChild(moveUpBtn);
+
+  const moveDownBtn = document.createElement("button");
+  moveDownBtn.className = "move-next";
+  moveDownBtn.title = "Переместить позже";
+  moveDownBtn.onclick = () => moveItem(item, 1);
+  leftGroup.appendChild(moveDownBtn);
 
   const delBtn = document.createElement("button");
   delBtn.className = "del-btn";
