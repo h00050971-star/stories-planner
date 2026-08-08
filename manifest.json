@@ -15,7 +15,10 @@
   "mediaType": "video",
   "draftText": "",
   "status": "draft",
-  "platforms": []
+  "platforms": [],
+  "trimStart": 29.23394707907663,
+  "trimEnd": 60.084,
+  "trimmedMediaPath": "media/s1786151019952eqato_trim1786151508099.mp4"
  },
  {
   "id": "s1786151413040lzlgd",
