@@ -39,6 +39,9 @@
   "mediaType": "video",
   "draftText": "",
   "status": "draft",
-  "platforms": []
+  "platforms": [],
+  "trimStart": 76.5,
+  "trimEnd": 117.466667,
+  "trimmedMediaPath": null
  }
 ]
