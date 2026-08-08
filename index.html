@@ -237,6 +237,8 @@ async function getFFmpeg(onProgress){
 }
 
 async function trimVideoInBrowser(srcUrl, start, end, ext, onStatus){
+  let wakeLock = null;
+  try{ wakeLock = await navigator.wakeLock?.request("screen"); }catch(e){}
   onStatus("Гружу обрезчик видео (один раз)…");
   const ff = await getFFmpeg((msg) => onStatus("Режу: " + msg.slice(0, 40)));
   onStatus("Скачиваю исходник…");
@@ -245,11 +247,15 @@ async function trimVideoInBrowser(srcUrl, start, end, ext, onStatus){
   const outName = "out.mp4";
   await ff.writeFile(inName, data);
   onStatus("Режу видео…");
-  await ff.exec([
-    "-i", inName, "-ss", String(start), "-to", String(end),
-    "-c:v", "libx264", "-crf", "20", "-preset", "veryfast",
-    "-c:a", "aac", "-movflags", "+faststart", outName,
-  ]);
+  try{
+    await ff.exec([
+      "-i", inName, "-ss", String(start), "-to", String(end),
+      "-c:v", "libx264", "-crf", "22", "-preset", "ultrafast",
+      "-c:a", "aac", "-movflags", "+faststart", outName,
+    ]);
+  } finally {
+    try{ wakeLock?.release(); }catch(e){}
+  }
   const out = await ff.readFile(outName);
   await ff.deleteFile(inName);
   await ff.deleteFile(outName);
@@ -257,6 +263,8 @@ async function trimVideoInBrowser(srcUrl, start, end, ext, onStatus){
 }
 
 async function compressVideoInBrowser(file, onStatus){
+  let wakeLock = null;
+  try{ wakeLock = await navigator.wakeLock?.request("screen"); }catch(e){}
   onStatus("Гружу сжиматель видео (один раз)…");
   const ff = await getFFmpeg((msg) => onStatus("Сжимаю: " + msg.slice(0, 40)));
   onStatus("Читаю файл…");
@@ -266,12 +274,17 @@ async function compressVideoInBrowser(file, onStatus){
   const outName = "out.mp4";
   await ff.writeFile(inName, data);
   onStatus("Сжимаю видео…");
-  await ff.exec([
-    "-i", inName,
-    "-vf", "scale=if(gt(iw\\,ih)\\,min(1280\\,iw)\\,-2):if(gt(iw\\,ih)\\,-2\\,min(1280\\,ih))",
-    "-c:v", "libx264", "-crf", "28", "-preset", "veryfast",
-    "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", outName,
-  ]);
+  try{
+    await ff.exec([
+      "-i", inName,
+      "-vf", "scale=if(gt(iw\\,ih)\\,min(960\\,iw)\\,-2):if(gt(iw\\,ih)\\,-2\\,min(960\\,ih))",
+      "-r", "24",
+      "-c:v", "libx264", "-crf", "30", "-preset", "ultrafast",
+      "-c:a", "aac", "-b:a", "96k", "-movflags", "+faststart", outName,
+    ]);
+  } finally {
+    try{ wakeLock?.release(); }catch(e){}
+  }
   const out = await ff.readFile(outName);
   await ff.deleteFile(inName);
   await ff.deleteFile(outName);
