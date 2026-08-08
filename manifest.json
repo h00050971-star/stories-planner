@@ -1,1 +1,35 @@
-[]
+[
+ {
+  "id": "s1786150936135rr2g6",
+  "order": 1,
+  "mediaPath": "media/s1786150936135rr2g6.mp4",
+  "mediaType": "video",
+  "draftText": "",
+  "status": "draft",
+  "platforms": [],
+  "trimStart": 0,
+  "trimEnd": 27.905119876674345,
+  "trimmedMediaPath": "media/s1786150936135rr2g6_trim1786151587376.mp4"
+ },
+ {
+  "id": "s1786151019952eqato",
+  "order": 2,
+  "mediaPath": "media/s1786151019952eqato.mp4",
+  "mediaType": "video",
+  "draftText": "",
+  "status": "draft",
+  "platforms": [],
+  "trimStart": 29.23394707907663,
+  "trimEnd": 60.084,
+  "trimmedMediaPath": "media/s1786151019952eqato_trim1786151508099.mp4"
+ },
+ {
+  "id": "s1786151413040lzlgd",
+  "order": 3,
+  "mediaPath": "media/s1786151413040lzlgd.mov",
+  "mediaType": "video",
+  "draftText": "",
+  "status": "draft",
+  "platforms": []
+ }
+]
