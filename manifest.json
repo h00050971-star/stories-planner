@@ -1,7 +1,7 @@
 [
  {
   "id": "s1786150936135rr2g6",
-  "order": 1,
+  "order": 3,
   "mediaPath": "media/s1786150936135rr2g6.mp4",
   "mediaType": "video",
   "draftText": "",
@@ -13,19 +13,19 @@
  },
  {
   "id": "s1786151019952eqato",
-  "order": 2,
+  "order": 1,
   "mediaPath": "media/s1786151019952eqato.mp4",
   "mediaType": "video",
   "draftText": "",
   "status": "draft",
   "platforms": [],
-  "trimStart": 29.23394707907663,
+  "trimStart": 28.2,
   "trimEnd": 60.084,
-  "trimmedMediaPath": "media/s1786151019952eqato_trim1786151508099.mp4"
+  "trimmedMediaPath": "media/s1786151019952eqato_trim1786152248436.mp4"
  },
  {
   "id": "s1786151413040lzlgd",
-  "order": 3,
+  "order": 2,
   "mediaPath": "media/s1786151413040lzlgd.mov",
   "mediaType": "video",
   "draftText": "",
