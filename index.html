@@ -398,6 +398,22 @@ function moveItem(item, direction){
   saveManifest(`Порядок: ${item.id} <-> ${other.id}`).catch(e => toast("Ошибка: " + e.message));
 }
 
+function duplicateItem(item){
+  const newId = "s" + Date.now() + Math.random().toString(36).slice(2, 7);
+  const copy = {
+    ...item,
+    id: newId,
+    order: nextOrder(),
+    trimStart: null,
+    trimEnd: null,
+    trimmedMediaPath: null,
+    status: "draft",
+  };
+  manifest.push(copy);
+  render();
+  saveManifest(`Дублировано: ${item.id} -> ${newId}`).catch(e => toast("Ошибка: " + e.message));
+}
+
 // ---------- UI helpers ----------
 function setStatus(s){ document.getElementById("status-line").textContent = s; }
 function toast(msg){
@@ -548,7 +564,9 @@ async function downloadOne(item, btnEl){
     // сетевая загрузка съедает время между тапом и вызовом — Safari может уже не считать
     // это действием пользователя и тихо откажет в шеринге. Поэтому: файл уже готов,
     // а реальный share() вызываем по СЛЕДУЮЩЕМУ тапу — без всякой задержки перед ним.
-    if (btnEl && navigator.canShare && navigator.canShare({ files: [file] })){
+    // Только на телефоне — на компе "поделиться" не нужно, там должен быть обычный файл в Загрузки.
+    const isMobile = window.matchMedia("(pointer: coarse)").matches || window.matchMedia("(max-width:700px)").matches;
+    if (isMobile && btnEl && navigator.canShare && navigator.canShare({ files: [file] })){
       btnEl.textContent = "💾";
       btnEl.title = "Сохранить в галерею";
       btnEl.onclick = async () => {
@@ -933,7 +951,6 @@ function makeLayerBox(item){
 function makeCard(item, index){
   const card = document.createElement("div");
   card.className = "card";
-  card.draggable = true;
   card.dataset.id = item.id;
 
   const head = document.createElement("div");
@@ -1040,6 +1057,12 @@ function makeCard(item, index){
   moveDownBtn.onclick = () => moveItem(item, 1);
   leftGroup.appendChild(moveDownBtn);
 
+  const dupBtn = document.createElement("button");
+  dupBtn.textContent = "⧉";
+  dupBtn.title = "Дублировать (второй момент из того же видео)";
+  dupBtn.onclick = () => duplicateItem(item);
+  leftGroup.appendChild(dupBtn);
+
   const delBtn = document.createElement("button");
   delBtn.className = "del-btn";
   delBtn.textContent = "✕";
@@ -1080,25 +1103,6 @@ function makeCard(item, index){
       await saveManifest(`Заменено медиа: ${item.id}`);
       toast("Медиа обновлено");
     }catch(err){ toast("Ошибка: " + err.message); }
-  });
-
-  // drag&drop переупорядочивания карточек (по HTML5 draggable, не файлы)
-  card.addEventListener("dragstart", (e) => {
-    e.dataTransfer.setData("text/sp-id", item.id);
-    card.classList.add("dragging");
-  });
-  card.addEventListener("dragend", () => card.classList.remove("dragging"));
-  card.addEventListener("drop", async (e) => {
-    const draggedId = e.dataTransfer.getData("text/sp-id");
-    if (!draggedId || draggedId === item.id) return;
-    e.preventDefault();
-    const from = manifest.find(m => m.id === draggedId);
-    const to = manifest.find(m => m.id === item.id);
-    if (!from || !to) return;
-    const tmp = from.order; from.order = to.order; to.order = tmp;
-    render();
-    try{ await saveManifest(`Переставлены местами: ${from.id} / ${to.id}`); }
-    catch(err){ toast("Ошибка: " + err.message); }
   });
 
   return card;
