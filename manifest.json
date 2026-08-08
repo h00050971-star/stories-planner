@@ -43,5 +43,14 @@
   "trimStart": 76,
   "trimEnd": 117.466667,
   "trimmedMediaPath": "media/s1786153366844y2kqk_trim1786155098923.mp4"
+ },
+ {
+  "id": "s1786155333295wlh85",
+  "order": 5,
+  "mediaPath": "media/s1786155333295wlh85.jpg",
+  "mediaType": "image",
+  "draftText": "",
+  "status": "draft",
+  "platforms": []
  }
 ]
