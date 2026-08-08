@@ -537,7 +537,7 @@ function mimeFor(filename){
   return map[ext] || "application/octet-stream";
 }
 
-async function downloadOne(item){
+async function downloadOne(item, btnEl){
   const path = displayPathFor(item);
   if (!path){ toast("Нечего скачивать — слот пуст"); return; }
   const filename = path.split("/").pop();
@@ -545,17 +545,24 @@ async function downloadOne(item){
     toast("Скачиваю…");
     const blob = await fetchAsBlob(path);
     const file = new File([blob], filename, { type: blob.type || mimeFor(filename) });
-    // на телефоне — через системное «Поделиться» (можно сохранить прямо в галерею),
-    // на компе — обычным файлом (Web Share API там либо недоступен, либо неудобен)
-    if (navigator.canShare && navigator.canShare({ files: [file] })){
-      try{
-        await navigator.share({ files: [file] });
-        toast("Выбери «Сохранить видео/изображение» в меню");
-        return;
-      }catch(shareErr){
-        if (shareErr.name === "AbortError") return; // пользователь закрыл шторку — не ошибка
-        // иначе — падаем в обычное скачивание файлом
-      }
+    // сетевая загрузка съедает время между тапом и вызовом — Safari может уже не считать
+    // это действием пользователя и тихо откажет в шеринге. Поэтому: файл уже готов,
+    // а реальный share() вызываем по СЛЕДУЮЩЕМУ тапу — без всякой задержки перед ним.
+    if (btnEl && navigator.canShare && navigator.canShare({ files: [file] })){
+      btnEl.textContent = "💾";
+      btnEl.title = "Сохранить в галерею";
+      btnEl.onclick = async () => {
+        try{
+          await navigator.share({ files: [file] });
+        }catch(shareErr){
+          if (shareErr.name !== "AbortError") triggerBlobDownload(blob, filename);
+        }
+        btnEl.textContent = "⬇";
+        btnEl.title = "Скачать";
+        btnEl.onclick = () => downloadOne(item, btnEl);
+      };
+      toast("Готово — нажми ещё раз, сохранит в галерею");
+      return;
     }
     triggerBlobDownload(blob, filename);
     toast("Скачано");
@@ -659,11 +666,25 @@ function makeTrimBox(item, videoEl){
   const applyBtn = document.createElement("button");
   applyBtn.textContent = "✂ Обрезать";
   applyBtn.className = "primary";
+  const undoBtn = document.createElement("button");
+  undoBtn.textContent = "↺ отменить";
+  undoBtn.title = "Вернуть исходное видео (до обрезки)";
+  undoBtn.style.display = "none";
   const status = document.createElement("span");
   status.className = "trim-status";
   applyRow.appendChild(applyBtn);
+  applyRow.appendChild(undoBtn);
   applyRow.appendChild(status);
   box.appendChild(applyRow);
+
+  undoBtn.onclick = async () => {
+    item.trimmedMediaPath = null;
+    item.trimStart = null;
+    item.trimEnd = null;
+    render();
+    try{ await saveManifest(`Обрезка отменена: ${item.id}`); toast("Вернул исходное видео"); }
+    catch(e){ toast("Ошибка: " + e.message); }
+  };
 
   function refreshUI(){
     fromInput.value = from.toFixed(1);
@@ -678,6 +699,7 @@ function makeTrimBox(item, videoEl){
     }
     status.textContent = item.trimmedMediaPath ? "✂ обрезано (готово)"
       : (item.trimStart != null && item.trimEnd != null) ? "Ожидает обрезки…" : `${fmtTime(from)} – ${fmtTime(to)}`;
+    undoBtn.style.display = item.trimmedMediaPath ? "" : "none";
   }
 
   function setDuration(d){
@@ -1037,7 +1059,7 @@ function makeCard(item, index){
   dlBtn.className = "dl-btn";
   dlBtn.textContent = "⬇";
   dlBtn.title = "Скачать";
-  dlBtn.onclick = () => downloadOne(item);
+  dlBtn.onclick = () => downloadOne(item, dlBtn);
   footer.appendChild(dlBtn);
 
   card.appendChild(footer);
