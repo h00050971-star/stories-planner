@@ -414,10 +414,21 @@ async function loadManifest(){
   render();
 }
 
-async function saveManifest(message){
+async function saveManifestNow(message){
   const b64 = b64EncodeUnicode(JSON.stringify(manifest, null, 1));
   const res = await ghPutFile("manifest.json", b64, message, manifestSha);
   manifestSha = res.content.sha;
+}
+
+// сериализует все сохранения строго по очереди — иначе при быстром
+// редактировании нескольких карточек подряд параллельные PUT-запросы
+// могут перетереть друг друга (последний, кто стартовал раньше, но
+// закончил позже, откатывает уже сохранённые чужие изменения)
+let saveManifestQueue = Promise.resolve();
+function saveManifest(message){
+  const run = saveManifestQueue.then(() => saveManifestNow(message));
+  saveManifestQueue = run.catch(() => {});
+  return run;
 }
 
 function nextOrder(){
